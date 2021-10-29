@@ -1,0 +1,108 @@
+/*
+農作業見守りデバイス　コード
+2021/9/9-10/25
+
+制作のポイント　10/2
+１）VScode+Platform IO IDEを使う場合は、ライブラリはローカルで。
+２）機器構成はM5STACK+ENV2+リレーユニット
+３）温湿度センサのライブラリはENV3のものを使用。このライブラリの中のSHT30に該当するコードを使用した。
+４）リレーを使用して、疑似的にダブルクリックを再現
+５）暑さ指数は、最も簡単と思われる式を使用
+
+
+PIOの特記事項　10/2
+１）#include <Arduino.h>を明示的に記載すること
+２）platform.iniのライブラリ記載の場所に、Wireも書き込まないとI2C接続が使用できなかった（要検証）
+
+
+*/
+
+
+//前準備　ライブラリのインクルード//
+//#include <Arduino.h>　　//VScode使用時は有効にする。
+#include <M5Stack.h>
+#include <Wire.h>
+#include "Adafruit_Sensor.h"
+#include <Adafruit_BMP280.h>
+#include "UNIT_ENV.h"
+
+//グローバル関数の準備//
+SHT3X sht30;
+Adafruit_BMP280 bme;
+//リレ－用のPINは26番を使用（M5GOBaseLiteのポートはB）
+#define RelayPIN 26
+
+float tmp = 0.0;
+float hum = 0.0;
+float pressure = 0.0;
+float wbgt = 0.0;
+
+//セットアップ//
+void setup() {
+  M5.begin();
+  Wire.begin();
+  pinMode(RelayPIN, OUTPUT);
+  digitalWrite(RelayPIN, LOW);
+  
+  M5.Lcd.setBrightness(10);
+  M5.Lcd.setTextSize(2);
+  Serial.println(F("ENV Unit(SHT30 and BMP280) test..."));
+
+  while (!bme.begin(0x76)){  
+    Serial.println("Could not find a valid BMP280 sensor!");
+    M5.Lcd.println("Could not find a valid BMP280 sensor!");
+  }
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.println("ENV Unit test...");
+}
+
+
+
+void loop() {
+  // 測定部
+  pressure = bme.readPressure();
+  pressure = pressure/100;
+
+  if(sht30.get()==0){
+    tmp = sht30.cTemp;
+    hum = sht30.humidity;
+  }
+
+//WBGT　計算
+  wbgt = 0.735 * tmp + 0.0374 * hum + 0.00292 * tmp * hum - 3.246;
+
+//表示部
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.printf("Temp: %2.3fC  \r\nHumi: %2.0f%%  \r\nPressure: %2.0fMPa \r\nWBGT: %2.3fC\r\n" , tmp, hum, pressure, wbgt);
+
+delay(3000);
+
+//リレー出力の判定と動作
+
+if (wbgt > 28.0){
+
+digitalWrite(RelayPIN, HIGH);
+M5.Lcd.print("Relay on");
+delay(300);
+digitalWrite(RelayPIN, LOW);
+delay(300);
+digitalWrite(RelayPIN, HIGH);
+delay(300);
+digitalWrite(RelayPIN, LOW);
+
+}
+
+esp_sleep_enable_timer_wakeup(180000000);//180sec
+esp_deep_sleep_start();
+
+
+
+
+}
+
+
+
+
+
+  
+
